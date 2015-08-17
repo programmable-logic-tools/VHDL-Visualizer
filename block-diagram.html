@@ -1,0 +1,223 @@
+<html>
+
+<head>
+<script type="text/javascript" src="jquery.js"></script>
+<script type="text/javascript" src="d3.min.js"></script>
+
+<script type="text/javascript">
+
+/**
+ * VHDL entity declaration
+ */
+VHDL_Entity = 
+{
+    name: "",
+    ports: {
+        "in": {},
+        "out": {},
+        "inout": {}
+        }
+}
+
+/*
+ * Parse VHDL entity declaration out of a string
+ */
+ VHDL_Entity.fromString = function(s)
+{
+    var debug = false;
+
+    // parse entity name
+    var parseName = s.match(/entity[\t \n]+([a-zA-Z0-9\_]*)[\t \n]+is/);
+    this.name = parseName[1];
+    var re = new RegExp("[\t \n]+end (entity|"+this.name+")[\t \n]*;");
+    var parseEndEntity = s.match(re);
+    if (debug)
+        console.log("Entity name is: "+this.name);
+        
+    // extract entity declaration
+    var s = s.substring(parseName.index, parseEndEntity.index + parseEndEntity[0].length);
+    if (debug)
+    {
+        console.log("Entity declaration is:");
+        console.log(s);
+    }
+
+    // parse all ports using a regular expression
+    // http://www.w3schools.com/jsref/jsref_obj_regexp.asp
+    // https://regex101.com/
+    var re = /[\t \n]*([a-zA-Z0-9_]+)[\t \n]*:[\t \n]*(in|out|inout)[\t \n]+([a-zA-Z0-9_]+)(\([0-9]+[\t \n]+[a-zA-Z]+[\t \n]+[0-9]+\))*[\t \n]*[;\)]+/gi;
+    // all hits for this regular expression as array:
+    var ports = s.match(re);
+    // for each hit: parse match groups
+    this.ports = {
+        "in": {},
+        "out": {},
+        "inout": {}
+        };
+    for (i=0; i<ports.length; i++)
+    {
+        // return match groups (the parts of the regular expression which are in round brackets):
+        var matchGroups = re.exec(ports[i]);
+        // for some mysterious reason, Chromium only works correctly on every second RegExp.exec function call
+        // dummy call:
+        re.exec(ports[i]);
+        if (matchGroups != null)
+        {
+            var name = matchGroups[1];
+            var type = matchGroups[3]+(matchGroups[4] ? matchGroups[4] : "");
+            this.ports[matchGroups[2]][name] = type;
+        }
+    }
+    if (debug)
+        console.log(this.ports);
+}
+
+/*
+ * Return a dictionary of key-type pairs of all entity ports, independent of port direction
+ */
+VHDL_Entity.getAllPorts = function()
+{
+    var result = {};
+    jQuery.extend(result, this.ports.in, this.ports.out, this.ports.inout);
+    console.log(result);
+    return result;
+}
+</script>
+
+<script>
+// Tools
+
+maxLength = function(obj)
+{
+    var length = 0;
+/*    for (i=0; i<a.length; i++)
+        length = Math.max(length, a[i].length); */
+    for (key in obj)
+        length = Math.max(length, key.length);
+    return length;
+}
+</script>
+
+<style>
+    rect.entity
+    {
+        fill: none;
+        stroke: black;
+    }
+    text.port
+    {
+        fill: black;
+    }
+</style>
+</head>
+
+<body>
+
+<input type="file" id="file-input" />
+<h3>Contents of the file:</h3>
+<pre id="file-content"></pre>
+
+<script>
+function readSingleFile(e) {
+  var file = e.target.files[0];
+  if (!file) {
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var contents = e.target.result;
+    displayContents(contents);
+  };
+  reader.readAsText(file);
+}
+
+function displayContents(contents) {
+  var element = document.getElementById('file-content');
+  element.innerHTML = contents;
+}
+
+document.getElementById('file-input')
+  .addEventListener('change', readSingleFile, false);
+</script>
+  
+<script>
+parseVHDL = function()
+{
+    vhdl = $('#vhdl').html();
+    Top = VHDL_Entity;
+    Top.fromString(vhdl);
+    //$('body').append( JSON.stringify(e.getAllPorts()) );
+
+    var width = 960,
+        height = 500;
+
+
+    var svg = d3.select("body").append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+    // Per-type markers, as they don't inherit styles.
+    svg.append("defs").selectAll("marker")
+        .attr("id", function(d) { return d; })
+        .attr("viewBox", "0 -5 10 10")
+        .attr("refX", 15)
+        .attr("refY", -1.5)
+        .attr("markerWidth", 6)
+        .attr("markerHeight", 6)
+        .attr("orient", "auto");
+        
+    // Draw entity rectangle
+    var rx = 50, ry = 50,
+        textWidth = 8, textHeight = 15;
+    var g = svg
+                .append("g")
+                    .attr("id", Top.name)
+                    .attr("class", "entity")
+    ;
+
+    var rectWidth = (maxLength(Top.ports.in)+maxLength(Top.ports.out)) * textWidth + 6,
+        rectHeight = Math.max(Object.keys(Top.ports.in).length, Object.keys(Top.ports.out).length) * textHeight + 4;
+    var rect = g
+                .append("rect")
+                    .attr("class", "entity")
+                    .attr("x", rx)
+                    .attr("y", ry)
+                    .attr("width", rectWidth)
+                    .attr("height", rectHeight)
+    ;
+
+    // left: in
+    var tx = rx + 2;
+    var ty = ry + textHeight + 2;
+    for (port in Top.ports.in)
+    {
+        g
+            .append("text")
+                .attr("class", "port")
+                .attr("x", tx)
+                .attr("y", ty)
+                .text(port)
+                ;
+        ty += textHeight;
+    }
+
+    // right: out
+    var tx = rx + rectWidth - 2;
+    var ty = ry + textHeight + 2;
+    for (port in Top.ports.out)
+    {
+        g
+            .append("text")
+                .attr("class", "port")
+                .attr("x", tx)
+                .attr("y", ty)
+                .attr("text-anchor", "end")
+                .text(port)
+                ;
+        ty += textHeight;
+    }
+};
+</script>
+</body>
+
+</html>
